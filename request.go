@@ -29,31 +29,33 @@ raw: if true no formatting will be applied to the prompt and no context will be 
 */
 
 type request struct {
+	ChatID string `json:"chat_id"`
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
 
 	Format   string  `json:"format,omitempty"`
 	System   string  `json:"system,omitempty"`
 	Template string  `json:"template,omitempty"`
-	Context  []int16 `json:"context,omitempty"`
+	Context  []int64 `json:"context,omitempty"`
 	Stream   bool    `json:"stream,omitempty"`
 	Raw      bool    `json:"raw,omitempty"`
 }
 
 type response struct {
+	ChatID          string  `json:"chat_id"`
 	Model           string  `json:"model"`
 	CreatedAt       string  `json:"created_at"`
 	Response        string  `json:"response"`
 	Done            bool    `json:"done"`
-	Context         []int16 `json:"context"`
-	TotalDuration   int16   `json:"total_duration"`
-	LoadDuration    int8    `json:"load_duration"`
-	PromptEvalCount int16   `json:"prompt_eval_count"`
-	EvalCount       int16   `json:"eval_count"`
-	EvalDuration    int8    `json:"eval_duration"`
+	Context         []int64 `json:"context"`
+	TotalDuration   int64   `json:"total_duration"`
+	LoadDuration    int64   `json:"load_duration"`
+	PromptEvalCount int64   `json:"prompt_eval_count"`
+	EvalCount       int64   `json:"eval_count"`
+	EvalDuration    int64   `json:"eval_duration"`
 }
 
-func makeRequest(payload request, url string) {
+func makeRequest(payload request, url string, responseChannel chan response) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(payload)
 	if err != nil {
@@ -71,14 +73,25 @@ func makeRequest(payload request, url string) {
 		log.Fatal(err)
 	}
 
-	handleBody(resp.Body)
+	handleBody(resp.Body, payload.ChatID, responseChannel)
 }
 
-func handleBody(body io.ReadCloser) {
+// TODO: send errors over channel when there is an error
+func handleBody(body io.ReadCloser, chatID string, responseChannel chan response) {
 	scanner := bufio.NewScanner(body)
+	var response response
 	for scanner.Scan() {
-		fmt.Printf("##############\n%s\n\n", scanner.Text()) // Println will add back the final '\n'
+		err := json.Unmarshal(scanner.Bytes(), &response)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "reading response:", err)
+			continue
+		}
+
+		fmt.Printf("ChatID: %s => %v\n", chatID, response)
+		response.ChatID = chatID
+		responseChannel <- response
 	}
+
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, "reading standard input:", err)
 	}
