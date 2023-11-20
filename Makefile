@@ -1,0 +1,3 @@
+bin/localllm:
+	go build -o bin/localllm ./...
+
